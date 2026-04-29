@@ -1,53 +1,61 @@
-| Supported Targets | ESP32 | ESP32-C2 | ESP32-C3 | ESP32-C5 | ESP32-C6 | ESP32-C61 | ESP32-H2 | ESP32-H21 | ESP32-H4 | ESP32-P4 | ESP32-S2 | ESP32-S3 | Linux |
-| ----------------- | ----- | -------- | -------- | -------- | -------- | --------- | -------- | --------- | -------- | -------- | -------- | -------- | ----- |
+# ACME32 - Avionics Control Module for ESP32
 
-# Hello World Example
+ACME32 is a high-performance, real-time Flight Computer and GNC (Guidance, Navigation, and Control) system designed for amateur and high-power model rocketry. Developed using the ESP-IDF framework on FreeRTOS, it leverages the ESP32 dual-core architecture to ensure deterministic timing for critical flight operations and high-frequency sensor fusion.
 
-Starts a FreeRTOS task to print "Hello World".
+## Core Features
 
-(See the README.md file in the upper level 'examples' directory for more information about examples.)
+### Advanced Sensor Fusion and Navigation
+The system integrates an MPU6050 (6-DOF IMU) and a BMP280 (Barometer) at a 100Hz sampling rate. It utilizes the Rodrigues rotation formula to maintain a stable "Ground-Up" reference vector, allowing for accurate vertical acceleration extraction and attitude estimation without gimbal lock issues.
 
-## How to use example
+### State Estimation
+A custom 1D Kalman Filter processes raw atmospheric pressure and global vertical acceleration. This filter provides real-time, low-latency estimates of altitude and velocity, effectively mitigating barometric noise and the Bernoulli effect during high-velocity flight phases.
 
-Follow detailed instructions provided specifically for this example.
+### Flight State Machine (FSM)
+The mission logic is governed by a deterministic Finite State Machine that manages the following flight phases:
+- IDLE: Ground calibration, sensor bias compensation, and launch readiness checks.
+- BOOST: Detection of rapid acceleration and motor burn monitoring.
+- COAST: Inertial ascent and apogee prediction logic.
+- APOGEE: Precision triggering for recovery systems (parachutes).
+- DESCENT: Monitoring of terminal velocity and descent stability.
+- LANDED: Post-flight data preservation and recovery beacon activation.
 
-Select the instructions depending on Espressif chip installed on your development board:
+### Modular Software Architecture
+The project follows a modular component-based structure for scalability:
+- acme_core: Centralized I2C bus management and device handling.
+- bmp280_driver / mpu6050_driver: Specialized low-level drivers for aeronautical sensors.
+- processing: Mathematics library containing Kalman filters, kinematics, and vector math.
 
-- [ESP32 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/stable/get-started/index.html)
-- [ESP32-S2 Getting Started Guide](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/get-started/index.html)
+## Hardware Requirements
+- ESP32 Development Board.
+- MPU6050 Accelerometer/Gyroscope via I2C.
+- BMP280 Barometer via I2C.
+- Recommended: Dedicated power regulation for high-torque servos (for TVC or active fin systems).
 
+## Getting Started
 
-## Example folder contents
+### Prerequisites
+- ESP-IDF Framework v5.x or higher.
+- CMake and Python 3.x.
 
-The project **hello_world** contains one source file in C language [hello_world_main.c](main/hello_world_main.c). The file is located in folder [main](main).
+### Build and Flash
+1. Clone the repository:
+   git clone https://github.com/DaggoggaD/ACME32.git
+2. Navigate to the project directory:
+   cd ACME32
+3. Build the firmware:
+   idf.py build
+4. Flash the device and open the monitor:
+   idf.py -p [YOUR_PORT] flash monitor
 
-ESP-IDF projects are built using CMake. The project build configuration is contained in `CMakeLists.txt` files that provide set of directives and instructions describing the project's source files and targets (executable, library, or both).
+## Project Structure
+- components/: Independent libraries for drivers and data processing.
+- main/: Core flight tasks, telemetry logic, and FSM implementation.
+- main/include/shared.h: Global definitions, structs, and flight constants.
 
-Below is short explanation of remaining files in the project folder.
+## Future Development
+- Implementation of active PID control for Thrust Vectoring (TVC).
+- Integration of microSD card logging for high-rate blackbox data.
+- Hardware-In-The-Loop (HITL) simulation support for trajectory validation.
 
-```
-├── CMakeLists.txt
-├── pytest_hello_world.py      Python script used for automated testing
-├── main
-│   ├── CMakeLists.txt
-│   └── hello_world_main.c
-└── README.md                  This is the file you are currently reading
-```
-
-For more information on structure and contents of ESP-IDF projects, please refer to Section [Build System](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/build-system.html) of the ESP-IDF Programming Guide.
-
-## Troubleshooting
-
-* Program upload failure
-
-    * Hardware connection is not correct: run `idf.py -p PORT monitor`, and reboot your board to see if there are any output logs.
-    * The baud rate for downloading is too high: lower your baud rate in the `menuconfig` menu, and try again.
-
-## Technical support and feedback
-
-Please use the following feedback channels:
-
-* For technical queries, go to the [esp32.com](https://esp32.com/) forum
-* For a feature request or bug report, create a [GitHub issue](https://github.com/espressif/esp-idf/issues)
-
-We will get back to you as soon as possible.
+## License
+This project is open-source. Consult the LICENSE file for usage terms.
