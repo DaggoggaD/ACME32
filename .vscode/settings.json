@@ -1,0 +1,6 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.flashType": "UART",
+  "idf.portWin": "COM9",
+  "idf.currentSetup": "C:\\esp\\v6.0\\esp-idf"
+}
