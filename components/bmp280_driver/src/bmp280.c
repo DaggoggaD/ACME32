@@ -72,6 +72,7 @@ static uint32_t bmp280_compensate_P(int32_t adc_P, bmp280_calib_data *calib) {
 }
 
 esp_err_t bmp280_read_calibration_matrix(i2c_master_dev_handle_t device) {
+    esp_rom_delay_us(2000);
     uint8_t buf[24];
     
     esp_err_t err = read_sensor_i2c(device, BMP280_REG_CALIB_START, buf, 24);

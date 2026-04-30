@@ -41,7 +41,9 @@ static esp_err_t calibrate_axis_mpu6050(i2c_master_dev_handle_t device){
     reset_offsets();
     ReadData_Mpu6050 offData = {0};
     float tempReads[6] = {0};
-    
+
+    esp_rom_delay_us(2000);
+    ESP_LOGI("MPU6050", "Starting calibration");
     for (int i = 0; i < OFFSET_CYCLES; i++)
     {
         esp_err_t offErr = get_data_mpu6050(device, &offData);
@@ -50,9 +52,11 @@ static esp_err_t calibrate_axis_mpu6050(i2c_master_dev_handle_t device){
             return offErr;
         }
 
+        printf("%5.1f, %5.1f, %5.1f\n", offData.accel_x_g, offData.accel_y_g, offData.accel_z_g);
+
         tempReads[0] += offData.accel_x_g;
-        tempReads[1] += offData.accel_y_g;
-        tempReads[2] += (offData.accel_z_g - 1);
+        tempReads[1] += offData.accel_y_g - 1.0f;
+        tempReads[2] += offData.accel_z_g;
 
         tempReads[3] += offData.gyro_x_dps;
         tempReads[4] += offData.gyro_y_dps;
@@ -74,7 +78,7 @@ static esp_err_t calibrate_axis_mpu6050(i2c_master_dev_handle_t device){
     gyroOffset_z = tempReads[5] / OFFSET_CYCLES;
 
     calibrated = 1;
-
+    ESP_LOGI("MPU6050", "Calibration correctly completed");
     return ESP_OK;
 }
 

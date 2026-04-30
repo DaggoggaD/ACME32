@@ -91,5 +91,5 @@ esp_err_t set_ground_direction(i2c_master_dev_handle_t accelerometer, int cycles
 
 float get_global_acceleration_ms2(const Vector3* localAcceleration, const Vector3* groundUp){
     float a = dot_product(localAcceleration, groundUp);
-    return (a-1.0f)*9.81f;
+    return (a-9.8f);
 }

@@ -6,6 +6,8 @@
 #include "shared.h"
 typedef struct Vector3 Vector3;
 
+float get_vector_module(const Vector3* vec);
+
 void update_ground_up(const Vector3* gyro_dps, Vector3* outGroundUp, float dt);
 
 esp_err_t set_ground_direction(i2c_master_dev_handle_t accelerometer, int cycles, Vector3* outGroundUp);

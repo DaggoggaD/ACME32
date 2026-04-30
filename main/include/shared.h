@@ -19,6 +19,8 @@
 #define FAST_CORE 1
 #define SLOW_CORE 0
 
+#define RETRIEVE_SENSOR_DATA_MS 10
+
 #define CYCLES_GROUNDUP_CALIBRATION 100
 #define I2C_MASTER_SCL_IO           22
 #define I2C_MASTER_SDA_IO           21
@@ -26,6 +28,11 @@
 
 #define BMP280_ADDR                 0x76
 #define BMP280_REG_ID               0xD0
+#define UP_Y                        // Change to UP_X or UP_Z
+                                    // based on the up direction 
+                                    // on MPU6050
+                                    // ALSO CHANGE tempReads -1.0f
+                                    // MPU6050 driver.
 
 #define MPU6050_ADDR                0x68
 #define MPU6050_REG_WHO_AM_I        0x75
