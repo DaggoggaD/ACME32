@@ -52,8 +52,6 @@ static esp_err_t calibrate_axis_mpu6050(i2c_master_dev_handle_t device){
             return offErr;
         }
 
-        printf("%5.1f, %5.1f, %5.1f\n", offData.accel_x_g, offData.accel_y_g, offData.accel_z_g);
-
         tempReads[0] += offData.accel_x_g;
         tempReads[1] += offData.accel_y_g - 1.0f;
         tempReads[2] += offData.accel_z_g;
