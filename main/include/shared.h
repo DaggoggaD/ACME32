@@ -15,6 +15,10 @@
 
 #define DEBUG 1
 #define TELEPLOT 0
+
+#define FAST_CORE 1
+#define SLOW_CORE 0
+
 #define CYCLES_GROUNDUP_CALIBRATION 100
 #define I2C_MASTER_SCL_IO           22
 #define I2C_MASTER_SDA_IO           21
@@ -25,6 +29,18 @@
 
 #define MPU6050_ADDR                0x68
 #define MPU6050_REG_WHO_AM_I        0x75
+
+#define GYRO_DRIFT_DEADBAND_FILTER 1.0f
+#define UP_AXIS_MPU6050 0 //0: X, 1:Y, 2: Z
+
+typedef enum {
+    S_IDLE,
+    S_BOOST,
+    S_COAST,
+    S_APOGEE,
+    S_DESCENT,
+    S_LANDED
+} FlightState;
 
 typedef struct Vector3 {
     float x;
@@ -49,6 +65,7 @@ typedef struct FlightTelemetry{
     float tiltAngle_deg;
     Vector3 upDir;
     uint32_t time;
+    FlightState FSMstate;
 
 } FlightTelemetry;
 

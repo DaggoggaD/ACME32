@@ -1,10 +1,14 @@
 #include "../include/shared.h"
+#include "../include/stateMachine.h"
 
 static i2c_master_dev_handle_t mpu6050;
 static i2c_master_dev_handle_t bmp280;
 static const char* Tag = "ACME32";
 
-static QueueHandle_t sensor_data_queue;
+static QueueHandle_t sensorDataQueue;
+static QueueHandle_t sdTelemetryQueue;
+
+
 static float groundPressure = 0;
 static Vector3 groundUp = {0};
 
@@ -54,7 +58,7 @@ static void task_get_sensor_data(void* params){
             .time = (uint32_t)(esp_timer_get_time() / 1000ULL)
         };
 
-        esp_err_t err = xQueueSend(sensor_data_queue, &data, 10);
+        esp_err_t err = xQueueSend(sensorDataQueue, &data, 10);
         if(err!=pdTRUE) ESP_LOGW("Task_get_sensor_data", "Queue full");
 
         vTaskDelayUntil(&lastWakeTime, xFrequency);
@@ -62,6 +66,17 @@ static void task_get_sensor_data(void* params){
 } 
 
 static void debug_telemetry(FlightTelemetry* data, FlightData* pack, uint8_t* cycleN, int cyclesToPrint){
+
+    // #if here and not insite task_telemetry for code clarity
+    #if DEBUG == 1
+        #if TELEPLOT == 1
+            printf(">Raw:%.2f\n", get_raw_altitude(pack->press, groundPressure););
+            printf(">EMA:%.2f\n", get_EMA_altitude(pack.press, groundPressure));
+            printf(">Kalman:%.2f\n", state.altitude);
+        #endif
+
+
+        
     if(*cycleN < cyclesToPrint){
         return;
     }
@@ -82,6 +97,8 @@ static void debug_telemetry(FlightTelemetry* data, FlightData* pack, uint8_t* cy
         data->height,
         pack->temp
     );
+
+    #endif
 }
 
 static float update_flight_data(uint32_t *lastTime_ms, FlightData* pack, KalmanState* state){
@@ -89,6 +106,12 @@ static float update_flight_data(uint32_t *lastTime_ms, FlightData* pack, KalmanS
     if (*lastTime_ms == 0) *lastTime_ms = pack->time;
     float dt = (pack->time - *lastTime_ms) / 1000.0f;
     *lastTime_ms = pack->time;
+
+    // Gyro deadband filtering
+    if (fabs(pack->gyro_dps.x) < GYRO_DRIFT_DEADBAND_FILTER) pack->gyro_dps.x = 0.0f;
+    if (fabs(pack->gyro_dps.y) < GYRO_DRIFT_DEADBAND_FILTER) pack->gyro_dps.y = 0.0f;
+    if (fabs(pack->gyro_dps.z) < GYRO_DRIFT_DEADBAND_FILTER) pack->gyro_dps.z = 0.0f;
+
 
     // Get up acceleration using gyro, update ground position relative to current rotation
     if (dt > 0.0f) update_ground_up(&(pack->gyro_dps), &groundUp, dt);
@@ -101,58 +124,120 @@ static float update_flight_data(uint32_t *lastTime_ms, FlightData* pack, KalmanS
     return accelerationUp;
 }
 
-
-
 static void task_telemetry(void* params) {
     FlightData pack = {0};
-    KalmanState state = {0};
+    KalmanState KState = {0};
+    FlightState FSMState = S_BOOST;
     uint32_t lastTime_ms = 0;
     uint8_t i = 0;
-    init_kalman(&state, 0);
+
+
+    init_kalman(&KState, 0);
     
     while (1) {
-        if (xQueueReceive(sensor_data_queue, &pack, portMAX_DELAY) == pdTRUE) {
-            float accelerationUp = update_flight_data(&lastTime_ms, &pack, &state);
+        if (xQueueReceive(sensorDataQueue, &pack, portMAX_DELAY) == pdTRUE) {
+            float accelerationUp = update_flight_data(&lastTime_ms, &pack, &KState);
+            
+            
+            // ---- fix tilt angle rotation ----
 
             float tilt_rad = acos(groundUp.z); 
             float tiltAngle = tilt_rad * (180.0f / M_PI);
 
             FlightTelemetry flightState = {
                 .accelerationUp = accelerationUp,
-                .height = state.altitude,
-                .velocityUp = state.velocity,
+                .height = KState.altitude,
+                .velocityUp = KState.velocity,
                 .tiltAngle_deg = tiltAngle,
                 .upDir = groundUp,
                 .time = pack.time
             };
 
-            #if DEBUG == 1
-            #if TELEPLOT == 1
-            printf(">Raw:%.2f\n", get_raw_altitude(pack->press, groundPressure););
-            printf(">EMA:%.2f\n", get_EMA_altitude(pack.press, groundPressure));
-            printf(">Kalman:%.2f\n", state.altitude);
-            #endif
+            state_handler(&FSMState, &flightState);
+            flightState.FSMstate = FSMState;
+            xQueueSend(sdTelemetryQueue, &flightState, 0);
 
-            debug_telemetry(&flightState, &pack, &i, 10);
-            #endif
+            //debug_telemetry(&flightState, &pack, &i, 10);
 
             i++;
         }
     }
 }
 
+static void write_to_sd(FlightTelemetry* data){
+    // Write to SD. Untill no SD reader is added, simply write to console
+
+    ESP_LOGI("SD WRITER", 
+        "Acceleration: %5.1f | Velocity: %5.1f | Height: %5.1f | Rotation (Up dir): (x: %5.1f, y: %5.1f, z: %5.1f) | Titl on up axis: %5.1f | FSM State: %1d",
+        data->accelerationUp,
+        data->velocityUp,
+        data->height,
+
+        data->upDir.x,
+        data->upDir.y,
+        data->upDir.z,
+        data->tiltAngle_deg,
+        
+        data->FSMstate
+    );
+
+}
+
+static void close_sd_file(){
+    // Close SD on landing.
+}
+
+static void sd_handler(FlightTelemetry* data, uint32_t packetCount){
+
+    switch(data->FSMstate) {
+        case S_IDLE:
+            if (packetCount % 100 == 0) write_to_sd(data);
+            break;
+        
+        case S_BOOST: case S_COAST: case S_APOGEE:
+            write_to_sd(data);
+            break;
+        
+        case S_DESCENT:
+            if (packetCount % 10 == 0) write_to_sd(data);
+            break;
+
+        case S_LANDED:
+            close_sd_file();
+            break;
+    }
+
+}
+
+static void task_sd_log(void* params){
+    FlightTelemetry data;
+    uint32_t packet_counter = 0;
+
+    while(1){
+        if(xQueueReceive(sdTelemetryQueue, &data, portMAX_DELAY) == pdTRUE){
+            packet_counter++;
+
+            sd_handler(&data, packet_counter);
+        }
+    }
+}
+
+
 void app_main(void) {
     init_i2c();
     wake_up_devices();
 
-    sensor_data_queue = xQueueCreate(50, sizeof(FlightData));
-    if(sensor_data_queue == NULL) {
+    sensorDataQueue = xQueueCreate(50, sizeof(FlightData));
+    sdTelemetryQueue = xQueueCreate(50, sizeof(FlightTelemetry));
+
+    if(sensorDataQueue == NULL) {
         ESP_LOGE(Tag, "Couldn't create seansor queue");
         return;
     }
 
-    xTaskCreate(task_get_sensor_data, "Task_sensors", 4096, NULL, 5, NULL);
+    xTaskCreatePinnedToCore(task_get_sensor_data, "Task_sensors", 4096, NULL, 5, NULL, FAST_CORE);
 
-    xTaskCreate(task_telemetry, "Task_telemetry", 4096, NULL, 2, NULL);
+    xTaskCreatePinnedToCore(task_telemetry, "Task_telemetry", 4096, NULL, 2, NULL, FAST_CORE);
 
+    xTaskCreatePinnedToCore(task_sd_log, "Task_sd_logger", 4096, NULL, 0, NULL, SLOW_CORE);
 }

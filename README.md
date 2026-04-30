@@ -1,5 +1,8 @@
 # ACME32 - Avionics Control Module for ESP32
 
+![Status: WIP](https://img.shields.io/badge/status-work--in--progress-orange)
+![License: Open Source](https://img.shields.io/badge/license-Open%20Source-blue)
+
 ACME32 is a high-performance, real-time Flight Computer and GNC (Guidance, Navigation, and Control) system designed for amateur and high-power model rocketry. Developed using the ESP-IDF framework on FreeRTOS, it leverages the ESP32 dual-core architecture to ensure deterministic timing for critical flight operations and high-frequency sensor fusion.
 
 ## Core Features
