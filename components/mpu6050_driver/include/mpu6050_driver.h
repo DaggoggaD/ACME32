@@ -1,6 +1,7 @@
 #ifndef MPU_6050_DRIVER_H
 #define MPU_6050_DRIVER_H
 
+
 #include "esp_log.h"
 #include "driver/i2c_master.h"
 #include "i2cController.h"
@@ -40,9 +41,11 @@ typedef struct ReadData_Mpu6050{
 
 } ReadData_Mpu6050;
 
+// Initializes mpu6050 without calibration routine
 esp_err_t wake_up_mpu6050(i2c_master_dev_handle_t device);
 
-esp_err_t wake_up_calibrated_mpu6050(i2c_master_dev_handle_t device);
+// Initializes mpu6050 calculating OFFSET_CYCLES values to minimize starting error 
+esp_err_t wake_up_calibrated_mpu6050(i2c_master_dev_handle_t device, float upLocalDir[3]);
 
 esp_err_t get_raw_data_mpu6050(i2c_master_dev_handle_t device, RawReadData_Mpu6050* dataOut);
 

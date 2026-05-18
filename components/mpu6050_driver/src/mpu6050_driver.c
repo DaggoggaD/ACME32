@@ -37,7 +37,7 @@ static void reset_offsets(){
     gyroOffset_z = 0;
 }
 
-static esp_err_t calibrate_axis_mpu6050(i2c_master_dev_handle_t device){
+static esp_err_t calibrate_axis_mpu6050(i2c_master_dev_handle_t device, float upLocalDir[3]){
     reset_offsets();
     ReadData_Mpu6050 offData = {0};
     float tempReads[6] = {0};
@@ -52,9 +52,9 @@ static esp_err_t calibrate_axis_mpu6050(i2c_master_dev_handle_t device){
             return offErr;
         }
 
-        tempReads[0] += offData.accel_x_g;
-        tempReads[1] += offData.accel_y_g;
-        tempReads[2] += offData.accel_z_g- 1.0f;
+        tempReads[0] += offData.accel_x_g - upLocalDir[0];
+        tempReads[1] += offData.accel_y_g - upLocalDir[1];
+        tempReads[2] += offData.accel_z_g - upLocalDir[2];
 
         tempReads[3] += offData.gyro_x_dps;
         tempReads[4] += offData.gyro_y_dps;
@@ -80,7 +80,7 @@ static esp_err_t calibrate_axis_mpu6050(i2c_master_dev_handle_t device){
     return ESP_OK;
 }
 
-esp_err_t wake_up_calibrated_mpu6050(i2c_master_dev_handle_t device){
+esp_err_t wake_up_calibrated_mpu6050(i2c_master_dev_handle_t device, float upLocalDir[3]){
     uint8_t data[2] = {0x6B, 0x1};
     esp_err_t err = write_i2c(device, data, 2);
 
@@ -98,7 +98,7 @@ esp_err_t wake_up_calibrated_mpu6050(i2c_master_dev_handle_t device){
     if (err != ESP_OK) ESP_LOGW("MPU6050", "Warning: Could not set Full Scale ranges");
 
     if(calibrated != 0) return err;
-    err = calibrate_axis_mpu6050(device);
+    err = calibrate_axis_mpu6050(device, upLocalDir);
     if(err!=ESP_OK) ESP_LOGW("MPU6050", "Couldn't calibrate axis correctly");
 
     return err;

@@ -1,6 +1,9 @@
 #include "../include/shared.h"
 #include "../include/stateMachine.h"
+#include "servos.h"
 #include "buzzer.h"
+#include "pid.h"
+
 
 // Devices
 static i2c_master_dev_handle_t mpu6050;
@@ -15,6 +18,9 @@ static QueueHandle_t sdTelemetryQueue;
 // and modified only by update_flight_data.
 static float groundPressure = 0;
 static Vector3 groundUp = {0};
+
+PIDController pitchPid;
+PIDController yawPid;
 
 
 // =======================================================================================
@@ -32,7 +38,12 @@ static void init_i2c(){
 }
 
 static void wake_up_devices(){
-    wake_up_calibrated_mpu6050(mpu6050);
+    ESP_LOGI(Tag, "Starting calibration in 2s"); 
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+
+    // Sensors initializations
+    wake_up_calibrated_mpu6050(mpu6050, (float[3]){UP_X, UP_Y, UP_Z});
 
     bmp280_read_calibration_matrix(bmp280);
     wake_up_bmp280(bmp280);
@@ -40,30 +51,46 @@ static void wake_up_devices(){
     get_ground_pressure(bmp280, &groundPressure);
     set_ground_direction(mpu6050, CYCLES_GROUNDUP_CALIBRATION, &groundUp);
 
-    #if HAS_FINDME_BUZZER == 0
+
+    // Fins initialization and testing
+    #if HAS_CONTROL_FINS == 1
+    const int servoPins[NUM_FINS] = {
+        SERVO_PIN_NORTH,
+        SERVO_PIN_SOUTH,
+        SERVO_PIN_EAST,
+        SERVO_PIN_WEST
+    };
+
+    init_servos(servoPins);
+    init_pid(&pitchPid, 1.0f, 0.0f, 0.2f, 15.0f, 5.0f);
+    init_pid(&yawPid, 1.0f, 0.0f, 0.2f, 15.0f, 5.0f);
+    #endif
+
+    // Communication components
+    #if HAS_FINDME_BUZZER == 1
     init_buzzer(BUZZ_PIN);
     #endif
+    
+    #if HAS_SD_READER == 1
+    //init_sd_reader();
+    #endif
+
 }
 
 // =======================================================================================
 //                               Telemetry calculations helpers
 // =======================================================================================
 
-static float update_time(uint32_t* lastTime_ms, FlightData* pack){
+static float update_time(uint32_t* lastTime_ms, ReadingsData* pack){
     if (*lastTime_ms == 0) *lastTime_ms = pack->time;
     float dt = (pack->time - *lastTime_ms) / 1000.0f;
     *lastTime_ms = pack->time;
     return dt;
 }
 
-static float update_flight_data(FlightData* pack, KalmanState* state, float dt){
+static float update_flight_data(ReadingsData* pack, KalmanState* state, float dt){
     // Updates rocket rotation (groundUp vector3), calculates current altitude and velocity, 
     // returns upwards acceleration. Uses a kalman filter to eliminate noise
-
-    // Gyro deadband filtering. Could be improved with "simple" 1D filter.
-    if (fabs(pack->gyro_dps.x) < GYRO_DRIFT_DEADBAND_FILTER) pack->gyro_dps.x = 0.0f;
-    if (fabs(pack->gyro_dps.y) < GYRO_DRIFT_DEADBAND_FILTER) pack->gyro_dps.y = 0.0f;
-    if (fabs(pack->gyro_dps.z) < GYRO_DRIFT_DEADBAND_FILTER) pack->gyro_dps.z = 0.0f;
 
 
     // Get upwar acceleration using gyro, update ground position relative to current rotation
@@ -73,12 +100,11 @@ static float update_flight_data(FlightData* pack, KalmanState* state, float dt){
     // Calculate filtered altitude and velocity
     float rawAlt = get_raw_altitude(pack->press, groundPressure);
     get_kalman_data(state, accelerationUp, rawAlt, dt);
-
     
     return accelerationUp;
 }
 
-static float calculate_tilt_angle(FlightData* pack, FlightState state){
+static float calculate_tilt_angle(ReadingsData* pack, FlightState state){
     // IDLE prograssive clamping is no longer needed.
     // This function calculates the tilt on the up axis, along the two "floor"
     // directions, to be used in parachute ejection on emergency.
@@ -124,43 +150,6 @@ static inline void calculate_pitch_yaw(float *pitchOut, float *yawOut){
 // =======================================================================================
 //                                     Logging functions
 // =======================================================================================
-
-static void debug_telemetry(FlightTelemetry* data, FlightData* pack, uint8_t* cycleN, int cyclesToPrint){
-    // Outputs all available data to terminal.
-
-    // #if here and not insite task_telemetry for code clarity
-    #if DEBUG == 1
-        #if TELEPLOT == 1
-            printf(">Raw:%.2f\n", get_raw_altitude(pack->press, groundPressure););
-            printf(">EMA:%.2f\n", get_EMA_altitude(pack.press, groundPressure));
-            printf(">Kalman:%.2f\n", state.altitude);
-        #endif
-
-
-        
-    if(*cycleN < cyclesToPrint){
-        return;
-    }
-    *cycleN = 0;
-
-    ESP_LOGI(Tag, "GroundUp: (x: %5.1f , y: %5.1f , z: %5.1f) | Velocity: %5.1f | AccelUP: %5.1f | Accel: (x: %5.1f , y: %5.1f , z: %5.1f) | Gyro: (x: %5.1f, y: %5.1f, z: %5.1f) | Altitude: %5.1f | Temp: %2.1f",
-        data->upDir.x,
-        data->upDir.y,
-        data->upDir.z,
-        data->velocityUp,
-        data->accelerationUp,
-        pack->accel_ms2.x,
-        pack->accel_ms2.y,
-        pack->accel_ms2.z,
-        pack->gyro_dps.x,
-        pack->gyro_dps.y,
-        pack->gyro_dps.z,
-        data->height,
-        pack->temp
-    );
-
-    #endif
-}
 
 static void write_to_sd(FlightTelemetry* data){
     // Write to SD. Untill no SD reader is added, simply write to console
@@ -231,13 +220,12 @@ static void task_get_sensor_data(void* params){
         ReadData_Mpu6050 mpuData = {0};
 
         esp_err_t bErr = get_data_bmp280(bmp280, &bmpData);
-
-        if(bErr != ESP_OK) ESP_LOGE("Task_get_sensor_data", "Couldn't get bmp280 data");
+        if(bErr != ESP_OK) ESP_LOGE("GetSensorData", "Couldn't get bmp280 data");
         
         esp_err_t mErr = get_data_mpu6050(mpu6050, &mpuData);
-        if(mErr != ESP_OK) ESP_LOGE("Task_get_sensor_data", "Couldn't get mpu6050 data");
+        if(mErr != ESP_OK) ESP_LOGE("GetSensorData", "Couldn't get mpu6050 data");
         
-        FlightData data = {
+        ReadingsData data = {
             .accel_ms2 = {mpuData.accel_x_g*9.81f, mpuData.accel_y_g*9.81f, mpuData.accel_z_g*9.81f},
             .gyro_dps = {mpuData.gyro_x_dps, mpuData.gyro_y_dps, mpuData.gyro_z_dps},
 
@@ -262,7 +250,7 @@ static void task_telemetry(void* params) {
 
     const float dpsToRads = (M_PI / 180.0f);
 
-    FlightData pack = {0};
+    ReadingsData pack = {0};
     KalmanState KState = {0};
     IMUState IState = {0};
     
@@ -271,7 +259,7 @@ static void task_telemetry(void* params) {
     uint8_t i = 0;
 
     init_kalman(&KState, 0);
-    init_imu_filter(&IState);
+    init_imu_filter(UP_X, UP_Y, UP_Z, &IState);
     
     while (1) {
         if (xQueueReceive(sensorDataQueue, &pack, portMAX_DELAY) == pdTRUE) {
@@ -309,6 +297,16 @@ static void task_telemetry(void* params) {
                 .time = pack.time
             };
 
+            // TEMP fin control
+            float pitchOut = update_pid(&pitchPid, 0.0f, pitch, dt);
+            float yawOut = update_pid(&yawPid, 0.0f, yaw, dt);
+
+            set_fin_angle(ServoNorth, 90.0f + pitchOut);
+            set_fin_angle(ServoSouth, 90.0f - pitchOut);
+
+            set_fin_angle(ServoEast,  90.0f + yawOut);
+            set_fin_angle(ServoWest,  90.0f - yawOut);
+
             state_handler(&FSMState, &flightState);
             flightState.FSMstate = FSMState;
             xQueueSend(sdTelemetryQueue, &flightState, 0);
@@ -336,11 +334,12 @@ static void task_sd_log(void* params){
     }
 }
 
+
 void app_main(void) {
     init_i2c();
     wake_up_devices();
 
-    sensorDataQueue = xQueueCreate(50, sizeof(FlightData));
+    sensorDataQueue = xQueueCreate(50, sizeof(ReadingsData));
     sdTelemetryQueue = xQueueCreate(50, sizeof(FlightTelemetry));
 
     if(sensorDataQueue == NULL) {

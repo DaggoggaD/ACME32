@@ -1,10 +1,11 @@
 #include "filters.h"
+#include "esp_log.h"
 #define EMA_ALPHA 0.2f
 #define MAHONY_KP 0.5f
 
-#define NOISE_ALT 0.05f
+#define NOISE_ALT 0.01f
 #define NOISE_VEL 0.1f
-#define NOISE_BARO 0.1f
+#define NOISE_BARO 0.05f
 
 static uint8_t firstRead = 1;
 static float altitude = 0;
@@ -100,11 +101,26 @@ void get_kalman_data(KalmanState* state, float accelZ, float baroAlt, float dt){
 // IMU Filter
 //=======================================
 
-void init_imu_filter(IMUState* state) {
-    state->q0 = 1.0f; 
-    state->q1 = 0.0f; 
-    state->q2 = 0.0f; 
-    state->q3 = 0.0f;
+void init_imu_filter(uint8_t x, uint8_t y, uint8_t z, IMUState* state) {
+    if (z == 1) {
+        state->q0 = 1.0f; 
+        state->q1 = 0.0f; 
+        state->q2 = 0.0f; 
+        state->q3 = 0.0f;
+    }
+    else if (x == 1){
+        state->q0 = 0.70710678f; 
+        state->q1 = 0.0f; 
+        state->q2 = -0.70710678f;
+        state->q3 = 0.0f;
+    }
+    else if (y == 1) {
+        state->q0 = 0.70710678f; 
+        state->q1 = 0.70710678f; 
+        state->q2 = 0.0f; 
+        state->q3 = 0.0f;
+    }
+    else ESP_LOGE("IMU Filter", "Invalid up direction initialization. Should pass UP_X, UP_Y, UP_Z and one must be set to 1");
 }
 
 void update_imu_filter(IMUState* state, IMUInput* DataIn, float dt) {

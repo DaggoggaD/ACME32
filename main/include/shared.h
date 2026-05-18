@@ -24,6 +24,13 @@
 #define I2C_MASTER_FREQ_HZ          100000
 
 typedef enum {
+    ServoNorth,
+    ServoSouth,
+    ServoEast,
+    ServoWest
+} ServoIndex;
+
+typedef enum {
     S_IDLE,
     S_ARMED,
     S_BOOST,
@@ -40,7 +47,7 @@ typedef struct Vector3 {
 } Vector3;
 
 // Stores the output of the sensors
-typedef struct FlightData{
+typedef struct ReadingsData{
     Vector3 gyro_dps;
     Vector3 accel_ms2;
 
@@ -48,7 +55,7 @@ typedef struct FlightData{
     float temp;
 
     uint32_t time;
-} FlightData;
+} ReadingsData;
 
 // Stores the filtered and calculated infos of the
 // current flight situation 
